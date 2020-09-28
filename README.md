@@ -10,6 +10,12 @@ Involved components:
 * Apache Tomcat 9.0.38
 * HikariCP 3.4.5
 * PGJDBC 42.2.16
+ 
+This experiment evolves incrementally. Before we dig into the matter, gere's the documentation:
+
+* Round 1: Replacing `new Thread` and `ThreadFactory` with virtual threads. Also, using pooled virtual `Threads` (which is discouraged) to limit the scope of changes.
+* Round 2: Use `Executors.newVirtualThreadExecutor()` where possible, replace `synchronized` blocks with `ReentrantLock` (bigger changes). PGJDBC changes need to be made in the original code enviroment, see https://github.com/mp911de/pgjdbc/tree/loom
+
 
 To run the experiment, you need to use a [Loom EAP build (Java 16)](https://jdk.java.net/loom/) and have a Postgres server instance running.
 
@@ -41,14 +47,6 @@ VirtualThread: 5 -> container-0
 VirtualThread: 6 -> HikariPool-1 housekeeper-1
 2020-09-25 12:17:39.067  INFO 13453 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
 VirtualThread: 7 -> http-nio-8080-BlockPoller
-VirtualThread: 8 -> pool-1-thread--1
-VirtualThread: 9 -> pool-1-thread--2
-VirtualThread: 10 -> pool-1-thread--3
-VirtualThread: 11 -> pool-1-thread--4
-VirtualThread: 12 -> pool-1-thread--5
-VirtualThread: 13 -> pool-1-thread--6
-VirtualThread: 14 -> pool-1-thread--7
-VirtualThread: 15 -> pool-1-thread--8
 ```
 
 The key is to see lines starting with `VirtualThread` which indicate that virtual threads were created.
@@ -58,18 +56,26 @@ The key is to see lines starting with `VirtualThread` which indicate that virtua
 The application reacts to two HTTP mappings:
 
 1. `$ curl http://localhost:8080/` -> Returns `OK` after `1000ms` using `Thread.sleep(…)`. This should simulate a blocking call **within** the JVM.
-2. `$ curl http://localhost:8080/sql` -> Returns `[{pg_sleep=}]` after `1000ms` using Postgres via JDBC to call `select pg_sleep(1)`. This simulates blocking I/O over the network.
+2. `$ curl http://localhost:8080/sql` -> Returns `[{pg_sleep=}]` after `1000ms` using Postgres via JDBC to call `select pg_sleep(1)`. This simulates blocking I/O over the network. Note that using JDBC is bounded by the connection pool and the pool limits the actual concurrency. 
 
 ## Customizing
 
 There are a few tweaks to make this run. Generally, there's a `GlobalThreadFactory` that is used from (almost) all places where a `Thread` is created. The Postgres Driver uses `java.util.Timer` that cannot be easily tweaked to run on a virtual thread.
 
-`GlobalThreadFactory` evaluates the `DvirtualThreads` system property. If you start your application with `-DvirtualThreads=true`, then the infrastructure uses virtual threads. If you omit the flag or use `-DvirtualThreads=false`, then `GlobalThreadFactory` creates regular kernel threads.
+`GlobalThreadFactory` evaluates the `-DvirtualThreads` system property. If you start your application with `-DvirtualThreads=true`, then the infrastructure uses virtual threads. If you omit the flag or use `-DvirtualThreads=false`, then `GlobalThreadFactory` creates regular kernel threads.
 
 To host virtual threads, `GlobalThreadFactory` creates a `FixedThreadPool` using the number of processors as thread count to limit the number of carrier kernel threads (`Thread.builder().name(name).task(runnable).virtual(carrierPool).build()`).
 Not setting the carrier thread pool (`Thread.builder().name(name).task(runnable).build()`) uses a default thread pool that seems to grow with the number of busy virtual threads.
 
+Round 1:
+
 Another tweak is the number of Tomcat threads (`server.tomcat.threads.max=1000` via `application.properties`). While the number of kernel threads is limited heavily by memory and the number of file handles, virtual thread counts can go much higher.
+
+Round 2:
+
+Use `Executors.newVirtualThreadExecutor()` instead of `GlobalThreadFactory` and `org.apache.tomcat.util.threads.ThreadPoolExecutor`. To get rid of HikariCP's `ThreadPoolExecutor` use, the `HikariPool` needs to be changed with is again a larger change.
+
+Tomcat uses a virtual Thread backed 
 
 ## How the application was customized
 
@@ -81,11 +87,33 @@ Several places create new Threads for various purposes. This experiment controls
 
 The classes are customized by duplicating their source and applying local customizations. Note that this mechanism works for the given dependency versions and is likely to break when upgrading dependencies. Do not try this at home.
 
+After the first round of observation (Round 1) and investigation, we yield a rather poor performance because code running on virtual threads that uses monitors (`synchronized`, `Object.wait()`) pins a virtual thread to its carrier thread. While replacing `synchronized` on the method level and `synchronized(this)` with `ReentrantLock` is quite straight forward, synchronization on external objects (`void foo(ExternalState state) { synchronized(state) {…} }`) requires a bigger change.
+
+Changes to Tomcat can be introduced in this repository. The Postgres driver requires changes to be made in its original project due to class visibility issues (see https://github.com/mp911de/pgjdbc/tree/loom).
+
+## Virtual Thread to Carrier Thread Pinning
+
+Currently, a limitation of Project Loom is that using monitors (`synchronized`, `Object.wait()`) causes that the virtual thread gets pinned to its carrier thread (kernel thread). Pinning a thread means that the carrier thread is busy and cannot be used for other virtual threads until the monitor gets released.
+
+This is hopefully a temporary limitation (https://mail.openjdk.java.net/pipermail/loom-dev/2019-December/000931.html) and explains the poor performance observed in Round 1.
+
+In this experiment's scope, I was able to replace `synchronized` calls on the invocation path with `ReentrantLock` for `synchronized` methods and `synchronized(this)` blocks. Running the application with `-Djdk.tracePinnedThreads=full` helps identifying which method holds monitors.
+
+Here's a summary of how many times `synchronized` is used across the involved libraries:
+
+* Hikari: 12
+* Tomcat (Embed Core): 576
+* PGJDBC: 134
+* Spring Data: 13
+* Spring Framework: 329
+
+With Loom's current state, all of these `synchronized` occurrences need to be replaced with a Java utility that is aware of virtual threads (such as `Lock` or other `java.util.concurrent` utilities) to avoid kernel thread pinning. Looking forward, either Loom's `synchronized` limitation can be solved at the JVM level, or library maintainers will need to work around this limitation. 
+
 ## Observations
 
 The measurement uses `wrk` (yes, there's the coordinated omission problem, but for this case it's something we can live with) for warmup and measurement. There are quite significant differences between using Virtual and Kernel threads. 
 
-**1000 Virtual Threads**
+**Round 1: 1000 Virtual Threads (fixed carrier thread pool)**
  
 ```
 wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080/
@@ -126,7 +154,7 @@ RSS: 253 MB
 
 ![Virtual Threads List](img/Virtual%20Threads%20List.png "Virtual Threads List")
 
-**1000 Virtual Threads (default scheduler)**
+**Round 1: 1000 Virtual Threads (default scheduler)**
  
 ```
 wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080/
@@ -167,6 +195,44 @@ RSS: 375 MB
 ![Virtual Threads DefaultCarrierPool Overview](img/Virtual%20Threads%20DefaultCarrierPool%20Overview.png "Virtual Threads DefaultCarrierPool Overview")
 
 ![Virtual Threads DefaultCarrierPool List](img/Virtual%20Threads%20DefaultCarrierPool%20List.png "Virtual Threads DefaultCarrierPool List")
+
+**Round 2: Virtual Threads (fixed carrier thread pool, reduced pooled virtual threads, addressed thread pinning)**
+ 
+```
+wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080    
+Running 10s test @ http://localhost:8080
+  5 threads and 1000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.01s    12.93ms   1.08s    91.85%
+    Req/Sec    66.51     75.89   434.00     89.34%
+  Latency Distribution
+     50%    1.01s 
+     75%    1.01s 
+     90%    1.01s 
+     99%    1.07s 
+  2061 requests in 10.09s, 231.46KB read
+  Socket errors: connect 753, read 206, write 10, timeout 0
+Requests/sec:    204.22
+Transfer/sec:     22.94KB
+
+wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080
+Running 10s test @ http://localhost:8080
+  5 threads and 1000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.01s     3.75ms   1.02s    62.66%
+    Req/Sec    58.82     90.13   470.00     92.39%
+  Latency Distribution
+     50%    1.00s 
+     75%    1.01s 
+     90%    1.01s 
+     99%    1.01s 
+  2199 requests in 10.04s, 246.96KB read
+  Socket errors: connect 753, read 140, write 0, timeout 0
+Requests/sec:    218.99
+Transfer/sec:     24.59KB
+```
+
+RSS: 234 MB
 
 
 **1000 Kernel Threads**
