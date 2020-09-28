@@ -235,43 +235,43 @@ Transfer/sec:     24.59KB
 RSS: 234 MB
 
 
-**1000 Kernel Threads**
+**300 Kernel Threads**
 
 ```
-wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080/
-Running 10s test @ http://localhost:8080/
+wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080
+Running 10s test @ http://localhost:8080
   5 threads and 1000 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.03s    65.68ms   1.25s    90.76%
-    Req/Sec    45.04     12.29    68.00     68.75%
+    Latency     1.01s     3.86ms   1.02s    72.97%
+    Req/Sec    45.10     27.70   135.00     76.42%
   Latency Distribution
-     50%    1.01s 
+     50%    1.00s 
      75%    1.01s 
-     90%    1.02s 
-     99%    1.24s 
-  2121 requests in 10.06s, 238.20KB read
-  Socket errors: connect 753, read 176, write 0, timeout 0
-Requests/sec:    210.76
-Transfer/sec:     23.67KB
+     90%    1.01s 
+     99%    1.02s 
+  2157 requests in 10.06s, 242.24KB read
+  Socket errors: connect 753, read 196, write 0, timeout 0
+Requests/sec:    214.51
+Transfer/sec:     24.09KB
 
-wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080/
-Running 10s test @ http://localhost:8080/
+wrk -c 1000 -t 5 -d 10s --latency http://localhost:8080
+Running 10s test @ http://localhost:8080
   5 threads and 1000 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.01s     2.66ms   1.02s    63.22%
-    Req/Sec    83.96    127.34   601.00     89.09%
+    Latency     1.00s     2.58ms   1.02s    66.67%
+    Req/Sec    46.95     56.47   394.00     97.89%
   Latency Distribution
-     50%    1.01s 
+     50%    1.00s 
      75%    1.01s 
      90%    1.01s 
      99%    1.01s 
-  2341 requests in 10.09s, 262.91KB read
-  Socket errors: connect 753, read 115, write 0, timeout 0
-Requests/sec:    232.02
-Transfer/sec:     26.06KB
+  2196 requests in 10.02s, 246.62KB read
+  Socket errors: connect 753, read 152, write 0, timeout 0
+Requests/sec:    219.15
+Transfer/sec:     24.61KB
 ```
 
-RSS: 356 MB
+RSS: 302 MB
 
 ![Kernel Threads Overview](img/Kernel%20Threads%20Overview.png "Kernel Threads Overview")
 
