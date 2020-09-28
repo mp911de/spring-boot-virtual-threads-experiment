@@ -17,6 +17,8 @@
 
 	<properties>
 		<java.version>16</java.version>
+		<!-- Requires a local build of https://github.com/mp911de/pgjdbc/tree/loom -->
+		<!-- <postgresql.version>42.3.0-loom-SNAPSHOT</postgresql.version> -->
 	</properties>
 
 	<dependencies>

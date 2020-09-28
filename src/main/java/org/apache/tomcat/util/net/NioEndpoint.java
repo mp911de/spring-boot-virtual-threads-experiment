@@ -1443,8 +1443,8 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel,SocketChannel> 
                 // Called from the poller to continue the IO operation
                 long nBytes = 0;
                 if (getError() == null) {
+                    lock.lock();
                     try {
-                        synchronized (this) {
                             if (!completionDone) {
                                 // This filters out same notification until processing
                                 // of the current one is done
@@ -1499,9 +1499,11 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel,SocketChannel> 
                             if (nBytes != 0 || !buffersArrayHasRemaining(buffers, offset, length)) {
                                 completionDone = false;
                             }
-                        }
                     } catch (IOException e) {
                         setError(e);
+                    }
+                    finally {
+                        lock.unlock();
                     }
                 }
                 if (nBytes > 0 || (nBytes == 0 && !buffersArrayHasRemaining(buffers, offset, length))) {
