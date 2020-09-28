@@ -33,7 +33,7 @@ import org.apache.tomcat.util.res.StringManager;
  * and that one will always throw a RejectedExecutionException
  *
  */
-public class ThreadPoolExecutor extends java.util.concurrent.ThreadPoolExecutor {
+public class ThreadPoolExecutor extends java.util.concurrent.ThreadPoolExecutor implements TomcatExecutor {
     /**
      * The string manager for this package.
      */
@@ -107,7 +107,7 @@ public class ThreadPoolExecutor extends java.util.concurrent.ThreadPoolExecutor 
      * If the current thread was started before the last time when a context was
      * stopped, an exception is thrown so that the current thread is stopped.
      */
-    protected void stopCurrentThreadIfNeeded() {
+    public void stopCurrentThreadIfNeeded() {
         if (currentThreadShouldBeStopped()) {
             long lastTime = lastTimeThreadKilledItself.longValue();
             if (lastTime + threadRenewalDelay < System.currentTimeMillis()) {
@@ -125,7 +125,7 @@ public class ThreadPoolExecutor extends java.util.concurrent.ThreadPoolExecutor 
         }
     }
 
-    protected boolean currentThreadShouldBeStopped() {
+    public boolean currentThreadShouldBeStopped() {
         if (threadRenewalDelay >= 0
             && Thread.currentThread() instanceof TaskThread) {
             TaskThread currentTaskThread = (TaskThread) Thread.currentThread();
