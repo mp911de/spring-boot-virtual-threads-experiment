@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>2.4.0-M3</version>
+		<version>3.0.0-M4</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.example</groupId>
@@ -16,9 +16,8 @@
 	<description>Demo project for Spring Boot</description>
 
 	<properties>
-		<java.version>16</java.version>
-		<!-- Requires a local build of https://github.com/mp911de/pgjdbc/tree/loom -->
-		<!-- <postgresql.version>42.3.0-loom-SNAPSHOT</postgresql.version> -->
+		<java.version>19</java.version>
+		<tomcat.version>10.1.0-M17</tomcat.version>
 	</properties>
 
 	<dependencies>
@@ -36,6 +35,7 @@
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -55,8 +55,6 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
-					<parameters>true</parameters>
-					<release>16</release>
 					<compilerArgs>--enable-preview</compilerArgs>
 				</configuration>
 			</plugin>
@@ -71,7 +69,7 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<configuration>
-					<jvmArguments>--enable-preview -DvirtualThreads=true</jvmArguments>
+					<jvmArguments>--enable-preview</jvmArguments>
 				</configuration>
 			</plugin>
 		</plugins>
@@ -79,21 +77,15 @@
 
 	<repositories>
 		<repository>
-			<id>spring-libs-snapshot</id>
-			<url>https://repo.spring.io/libs-snapshot</url>
-			<snapshots>
-				<enabled>true</enabled>
-			</snapshots>
+			<id>spring-libs-milestone</id>
+			<url>https://repo.spring.io/libs-milestone</url>
 		</repository>
 	</repositories>
 
 	<pluginRepositories>
 		<pluginRepository>
-			<id>spring-libs-snapshot</id>
-			<url>https://repo.spring.io/libs-snapshot</url>
-			<snapshots>
-				<enabled>true</enabled>
-			</snapshots>
+			<id>spring-libs-milestone</id>
+			<url>https://repo.spring.io/libs-milestone</url>
 		</pluginRepository>
 	</pluginRepositories>
 
