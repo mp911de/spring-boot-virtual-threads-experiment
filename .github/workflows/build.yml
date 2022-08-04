@@ -18,6 +18,5 @@ jobs:
         with:
           website: jdk.java.net
           release: 19
-          version: 19.ea.32-open
       - name: Build with Maven Wrapper
         run: ./mvnw clean verify
